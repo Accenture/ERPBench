@@ -1,0 +1,42 @@
+# T1 — SEARCH-BASED NAVIGATION. Tests whether the brain can use the ERPNext
+# top search bar (Ctrl+G / magnifying glass) to find a record instead of
+# drilling down via the sidebar. Starts from the home page so the sidebar
+# path is unavailable by instruction. Verification: change Tax ID.
+
+id: t1_search_and_open_customer
+tier: T1
+task_type: text_edit
+prompt: >-
+  Use the top search bar (the search icon at the top of the page, or Ctrl+G)
+  to find the customer named '{customer_name}'. Open it. Then change its
+  Tax ID field to 'TX-{slug}-SEARCH' and save the record. Do NOT navigate
+  via the sidebar — use the search bar only.
+mode: do
+start_url: "http://erpnext-frontend:8080/app/home"
+brain: any
+max_actions: 18
+timeout_seconds: 300
+
+expected_actions:
+  - { type: click_field,  label: "Search bar",              category: safe }
+  - { type: type,         text:  "{customer_name}",         category: safe }
+  - { type: click_link,   label: "{customer_name}",         category: safe }
+  - { type: click_field,  label: "Tax ID",                  category: safe }
+  - { type: type,         text:  "TX-{slug}-SEARCH",     category: safe }
+  - { type: click_button, label: "Save", button_role: save, category: commit }
+
+fixture:
+  reset: unique_name
+  pre_seed:
+    - doctype: Customer
+      fields:
+        customer_name: "{customer_name}"
+        customer_type: Company
+        customer_group: Commercial
+        territory: All Territories
+
+graders:
+  - kind: db
+    endpoint: /api/resource/Customer/{customer_name}
+    expect:
+      tax_id: "TX-{slug}-SEARCH"

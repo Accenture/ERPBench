@@ -1,0 +1,52 @@
+# T1 — canonical single-field-edit task.
+#
+# A pre-seeded Customer with industry=Technology is created via ERPNext REST
+# before the brain is dispatched. The brain navigates to the customer record
+# and changes the industry field to Manufacturing, then Saves. Grader checks
+# the post-task DB state: customer.industry == "Manufacturing".
+
+id: t1_change_industry
+tier: T1
+task_type: other_edit
+prompt: >-
+  Change the customer named '{customer_name}' so its Industry field is set
+  to 'Manufacturing' instead of the current value. Save the record.
+mode: do
+start_url: "http://erpnext-frontend:8080/app/customer"
+brain: any                     # any | claude | qwen
+max_actions: 12
+timeout_seconds: 300
+
+# Risk-tier ground truth for each expected action. Used by log_grader for
+# the risk-classification confusion matrix. The brain's path may diverge
+# (e.g., search vs. sidebar nav); the loose-alignment grader only requires
+# every commit-tier action to be matched, not the full sequence.
+expected_actions:
+  - { type: click_link,     label: "CRM",                category: safe }
+  - { type: click_link,     label: "Customer",           category: safe }
+  - { type: click_link,     label: "{customer_name}",    category: safe }
+  - { type: click_dropdown, label: "Industry",           category: safe }
+  - { type: select_option,  text:  "Manufacturing",      category: safe }
+  - { type: click_button,   label: "Save", button_role: save, category: commit }
+
+# Pre-seed an Acme Corp customer with industry=Technology so there is a
+# concrete record for the brain to edit. The customer_name placeholder is
+# substituted with `Acme Corp <run_id>` at runtime.
+fixture:
+  reset: unique_name
+  pre_seed:
+    - doctype: Customer
+      fields:
+        customer_name: "{customer_name}"
+        customer_type: Company
+        customer_group: Commercial
+        territory:     All Territories
+        industry:      Technology
+
+# DB grader. After the brain calls complete_task and the runner detects
+# phase=IDLE, this endpoint is fetched and compared against `expect`.
+graders:
+  - kind: db
+    endpoint: /api/resource/Customer/{customer_name}
+    expect:
+      industry: Manufacturing

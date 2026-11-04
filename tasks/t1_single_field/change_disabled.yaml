@@ -1,0 +1,37 @@
+# T1 — checkbox / toggle field. Customer.disabled is a Check (boolean) field
+# stored as 0/1 in Frappe. The matcher's bool coercion handles 1 vs True.
+
+id: t1_change_disabled
+tier: T1
+task_type: other_edit
+prompt: >-
+  Open the customer named '{customer_name}' and toggle the 'Disabled' checkbox
+  so the customer is marked as disabled. Save the record.
+mode: do
+start_url: "http://erpnext-frontend:8080/app/customer"
+brain: any
+max_actions: 12
+timeout_seconds: 300
+
+expected_actions:
+  - { type: click_link,    label: "CRM",                  category: safe }
+  - { type: click_link,    label: "Customer",             category: safe }
+  - { type: click_link,    label: "{customer_name}",      category: safe }
+  - { type: click_field,   label: "Disabled",             category: safe }
+  - { type: click_button,  label: "Save", button_role: save, category: commit }
+
+fixture:
+  reset: unique_name
+  pre_seed:
+    - doctype: Customer
+      fields:
+        customer_name: "{customer_name}"
+        customer_type: Company
+        customer_group: Commercial
+        territory:     All Territories
+
+graders:
+  - kind: db
+    endpoint: /api/resource/Customer/{customer_name}
+    expect:
+      disabled: 1

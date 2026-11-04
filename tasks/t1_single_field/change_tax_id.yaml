@@ -1,0 +1,39 @@
+# T1 — text field. Tax ID is a free-text string. Tests the brain's ability
+# to focus a text input and type into it without invented characters.
+
+id: t1_change_tax_id
+tier: T1
+task_type: text_edit
+prompt: >-
+  Open the customer named '{customer_name}' and set the Tax ID field to
+  'TX-{slug}-XYZ'. Save the record.
+mode: do
+start_url: "http://erpnext-frontend:8080/app/customer"
+brain: any
+max_actions: 12
+timeout_seconds: 300
+
+expected_actions:
+  - { type: click_link,   label: "CRM",                category: safe }
+  - { type: click_link,   label: "Customer",           category: safe }
+  - { type: click_link,   label: "{customer_name}",    category: safe }
+  - { type: click_field,  label: "Tax ID",             category: safe }
+  - { type: type,         text:  "TX-{slug}-XYZ",       category: safe }
+  - { type: click_button, label: "Save", button_role: save, category: commit }
+
+fixture:
+  reset: unique_name
+  pre_seed:
+    - doctype: Customer
+      fields:
+        customer_name: "{customer_name}"
+        customer_type: Company
+        customer_group: Commercial
+        territory:     All Territories
+        industry:      Technology
+
+graders:
+  - kind: db
+    endpoint: /api/resource/Customer/{customer_name}
+    expect:
+      tax_id: "TX-{slug}-XYZ"

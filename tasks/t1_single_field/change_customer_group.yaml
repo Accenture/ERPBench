@@ -1,0 +1,39 @@
+# T1 — link/dropdown field. Customer Group is a Link to the Customer Group
+# doctype. ERPNext ships with Commercial / Individual / Government / etc.
+
+id: t1_change_customer_group
+tier: T1
+task_type: other_edit
+prompt: >-
+  Change the customer named '{customer_name}' so its Customer Group field
+  is set to 'Government' instead of the current value. Save the record.
+mode: do
+start_url: "http://erpnext-frontend:8080/app/customer"
+brain: any
+max_actions: 12
+timeout_seconds: 300
+
+expected_actions:
+  - { type: click_link,     label: "CRM",                category: safe }
+  - { type: click_link,     label: "Customer",           category: safe }
+  - { type: click_link,     label: "{customer_name}",    category: safe }
+  - { type: click_dropdown, label: "Customer Group",     category: safe }
+  - { type: select_option,  text:  "Government",         category: safe }
+  - { type: click_button,   label: "Save", button_role: save, category: commit }
+
+fixture:
+  reset: unique_name
+  pre_seed:
+    - doctype: Customer
+      fields:
+        customer_name: "{customer_name}"
+        customer_type: Company
+        customer_group: Commercial
+        territory:     All Territories
+        industry:      Technology
+
+graders:
+  - kind: db
+    endpoint: /api/resource/Customer/{customer_name}
+    expect:
+      customer_group: Government

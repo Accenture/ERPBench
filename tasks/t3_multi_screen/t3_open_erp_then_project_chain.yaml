@@ -1,0 +1,117 @@
+# T3 — OSWorld-analog variant of t3_project_task_timesheet.
+#
+# What changed vs the base task:
+#   1. skip_nav_assist: true
+#      The harness does NOT pre-navigate Chromium to the ERPNext Project
+#      list. Instead it resets the browser to about:blank. The agent must
+#      type the ERPNext URL into the address bar themselves.
+#   2. Prompt has a prepended "Step 0" describing the browser navigation.
+#   3. max_actions and timeout_seconds bumped to cover the extra URL-typing
+#      round-trip (address bar → type → Enter → wait → possible login).
+#
+# Downstream steps 1-3 (Project → Task → Timesheet) are identical to the
+# base task, including the "Time log for {slug}" description marker in
+# the Timesheet's time_log row.
+#
+# Design intent: brings T3 closer to OSWorld's "agent operates on a
+# desktop, must reach the target app themselves" convention. Removes
+# the harness cheat where nav-assist hand-delivered the start page.
+# nav_assist_ok is forced False by the runner when skip_nav_assist=true,
+# so partial_grader.right_page must be earned by the agent actually
+# reaching the target doctype URL — no floor credit.
+
+id: t3_open_erp_then_project_chain
+tier: T3
+task_type: chained_workflow
+skip_nav_assist: true
+prompt: |-
+  Your browser is currently on a blank page (about:blank). ERPNext is
+  hosted at http://erpnext-frontend:8080. You need to open it and
+  complete a three-step project management workflow. The unique run
+  identifier for this task is: {slug}
+
+  0. Open ERPNext:
+     - Use the navigate_url action with url='http://erpnext-frontend:8080/app/project'
+       to navigate the browser to the ERPNext Project list.
+     - If a login page appears, sign in as:
+         Email/Username: Administrator
+         Password: admin
+     After signing in, you should be on the Project list at /app/project.
+
+  1. On the Project list, click 'Add Project' (or '+ New') to open a
+     blank Project form. Set:
+     - Project Name: Proj-{slug}
+     - Status: Open
+     Save the Project.
+
+  2. Open the Project 'Proj-{slug}' you just created. In the Tasks
+     section (a tab or side panel on the Project form), click 'Add Row'
+     or 'Create Task' to add a new Task with:
+     - Subject: Task-{slug}
+     - Status: Open
+     Save the Task.
+
+  3. From the Task 'Task-{slug}', use the 'Create > Timesheet' menu
+     (or navigate to /app/timesheet/new). Fill in ONE time-log row:
+     - Activity Type: Communication
+     - Task: Task-{slug} (should auto-populate if creating from the Task)
+     - From Time: any workday timestamp
+     - Hours: 2
+     - Description: Time log for {slug}   <-- IMPORTANT: exact text
+     Save the Timesheet (do NOT submit).
+human_prompt: |-
+  Create three linked records: a Project, a Task inside it, and a Timesheet
+  logged against that Task. Type the names exactly as written.
+
+  1. On the Project list, click 'Add Project' (or '+ New'). Set Project Name
+     to exactly "Proj-{slug}" and Status to "Open". Save.
+  2. Open the Project you just created. In its Tasks section (a tab or side
+     panel on the form), click 'Add Row' (or 'Create Task') and add a Task with
+     Subject exactly "Task-{slug}" and Status "Open". Save.
+  3. From that Task, use the 'Create > Timesheet' menu (or open a new
+     Timesheet). Add one time-log row: Activity Type "Communication",
+     From Time any workday time, Hours 2, and Description exactly
+     "Time log for {slug}". Save the Timesheet (do NOT submit).
+
+  Done when the Project, Task, and Timesheet all exist with those exact values.
+mode: do
+# start_url is still declared so partial_grader can derive the target
+# doctype slug for its right_page check. It is NOT used by nav-assist
+# when skip_nav_assist=true — the runner resets to about:blank instead.
+start_url: "http://erpnext-frontend:8080/app/project"
+brain: any
+# +20 actions vs base (80): URL-bar interaction is typically 3-6 actions,
+# plus login round-trip (5-8 actions if the session expired) plus a small
+# buffer for wait-for-load turns.
+max_actions: 100
+# +5 min vs base (1500s): URL nav + login can take 30-60s of extra wall
+# clock, plus latency on address-bar interactions from the model.
+timeout_seconds: 1800
+
+fixture:
+  reset: unique_name
+  pre_seed: []
+
+# Grader specs identical to the base task — same three chained-workflow
+# graders using fetch_first_from_list to locate auto-named docs.
+graders:
+  - kind: db
+    endpoint: "/api/resource/Project?filters=[[\"project_name\",\"=\",\"Proj-{slug}\"]]&limit_page_length=1"
+    fetch_first_from_list: true
+    expect:
+      project_name: "Proj-{slug}"
+      status: Open
+
+  - kind: db
+    endpoint: "/api/resource/Task?filters=[[\"subject\",\"=\",\"Task-{slug}\"]]&limit_page_length=1"
+    fetch_first_from_list: true
+    expect:
+      subject: "Task-{slug}"
+      status: Open
+
+  - kind: db
+    endpoint: "/api/resource/Timesheet?filters=[[\"Timesheet Detail\",\"description\",\"=\",\"Time log for {slug}\"]]&limit_page_length=1"
+    fetch_first_from_list: true
+    expect_with_weights:
+      total_hours: { value: 2.0,   weight: 1.0 }
+      status:      { value: Draft, weight: 1.0 }

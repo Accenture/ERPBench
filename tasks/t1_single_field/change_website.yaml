@@ -1,0 +1,38 @@
+# T1 — text field, URL value. Tests typing of special characters (://, .)
+
+id: t1_change_website
+tier: T1
+task_type: text_edit
+prompt: >-
+  Open the customer named '{customer_name}' and set the Website field to
+  'https://acme-{slug}.example.com'. Save the record.
+mode: do
+start_url: "http://erpnext-frontend:8080/app/customer"
+brain: any
+max_actions: 12
+timeout_seconds: 300
+
+expected_actions:
+  - { type: click_link,   label: "CRM",                category: safe }
+  - { type: click_link,   label: "Customer",           category: safe }
+  - { type: click_link,   label: "{customer_name}",    category: safe }
+  - { type: click_field,  label: "Website",            category: safe }
+  - { type: type,         text:  "https://acme-{slug}.example.com", category: safe }
+  - { type: click_button, label: "Save", button_role: save, category: commit }
+
+fixture:
+  reset: unique_name
+  pre_seed:
+    - doctype: Customer
+      fields:
+        customer_name: "{customer_name}"
+        customer_type: Company
+        customer_group: Commercial
+        territory:     All Territories
+        industry:      Technology
+
+graders:
+  - kind: db
+    endpoint: /api/resource/Customer/{customer_name}
+    expect:
+      website: "https://acme-{slug}.example.com"

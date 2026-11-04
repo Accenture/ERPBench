@@ -1,0 +1,37 @@
+# T1 — CREATE NEW RECORD (Lead). Cross-doctype Add flow via Lead list.
+# Lead auto-names with CRM-LEAD-YYYY-NNNNN series, so grader uses the
+# two-step list-then-GET pattern keyed on company_name.
+
+id: t1_create_lead_simple
+tier: T1
+task_type: create
+prompt: >-
+  Create a new lead with first name 'Jane', last name 'Doe', and organization
+  name '{lead_name}'. Click Save to commit the record.
+mode: do
+start_url: "http://erpnext-frontend:8080/app/lead"
+brain: any
+max_actions: 25
+timeout_seconds: 300
+
+expected_actions:
+  - { type: click_button, label: "+ Add Lead",            category: safe }
+  - { type: click_field,  label: "First Name",            category: safe }
+  - { type: type,         text:  "Jane",                  category: safe }
+  - { type: click_field,  label: "Last Name",             category: safe }
+  - { type: type,         text:  "Doe",                   category: safe }
+  - { type: click_field,  label: "Organization Name",     category: safe }
+  - { type: type,         text:  "{lead_name}",           category: safe }
+  - { type: click_button, label: "Save", button_role: save, category: commit }
+
+fixture:
+  reset: unique_name
+
+graders:
+  - kind: db
+    endpoint: "/api/resource/Lead?filters=[[\"company_name\",\"=\",\"{lead_name}\"]]&fields=[\"name\",\"first_name\",\"last_name\",\"company_name\"]&limit_page_length=1"
+    fetch_first_from_list: true
+    expect:
+      company_name: "{lead_name}"
+      first_name: "Jane"
+      last_name: "Doe"

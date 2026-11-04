@@ -1,0 +1,48 @@
+# T1 — autocomplete link field on a less-prominent tab. Customer.default_price_list
+# is a Link to Price List. ERPNext ships with "Standard Selling" and "Standard
+# Buying"; we flip from one to the other. Note: this field typically lives on
+# the "Currency and Price List" tab, not the main form area.
+#
+# (Renamed from change_payment_terms — Payment Terms Template doesn't ship
+# with defaults on a fresh ERPNext install. Default Price List does, and the
+# UI pattern is functionally the same: autocomplete link, on a sub-tab.)
+
+id: t1_change_default_price_list
+tier: T1
+task_type: other_edit
+prompt: >-
+  Open the customer '{customer_name}' and change the 'Default Price List' to
+  'Standard Buying'. It may live under the 'Currency and Price List' tab.
+  Save the record.
+mode: do
+start_url: "http://erpnext-frontend:8080/app/customer"
+brain: any
+max_actions: 14
+timeout_seconds: 300
+
+expected_actions:
+  - { type: click_link,     label: "CRM",                       category: safe }
+  - { type: click_link,     label: "Customer",                  category: safe }
+  - { type: click_link,     label: "{customer_name}",           category: safe }
+  - { type: click_link,     label: "Currency and Price List",   category: safe }   # tab
+  - { type: click_field,    label: "Default Price List",        category: safe }
+  - { type: type,           text:  "Standard Buying",           category: safe }
+  - { type: select_option,  text:  "Standard Buying",           category: safe }
+  - { type: click_button,   label: "Save", button_role: save, category: commit }
+
+fixture:
+  reset: unique_name
+  pre_seed:
+    - doctype: Customer
+      fields:
+        customer_name: "{customer_name}"
+        customer_type: Company
+        customer_group: Commercial
+        territory:     All Territories
+        default_price_list: Standard Selling
+
+graders:
+  - kind: db
+    endpoint: /api/resource/Customer/{customer_name}
+    expect:
+      default_price_list: Standard Buying

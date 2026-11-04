@@ -1,0 +1,38 @@
+# T1 — TEXT FIELD on Lead. Cross-doctype text edit; tests whether brain
+# can find + edit a text field on a different doctype (Lead vs Customer).
+# Lead.email_id is a plain text input in the main Lead form.
+
+id: t1_change_lead_email
+tier: T1
+task_type: text_edit
+prompt: >-
+  Open the Lead for company '{lead_name}' (search the Lead list to find it)
+  and set the 'Email' field to 'jane.doe.{slug}@example.com'. Save the record.
+mode: do
+start_url: "http://erpnext-frontend:8080/app/lead"
+brain: any
+max_actions: 14
+timeout_seconds: 300
+
+expected_actions:
+  - { type: click_link,   label: "{lead_name}",          category: safe }
+  - { type: click_field,  label: "Email",                category: safe }
+  - { type: type,         text:  "jane.doe.{slug}@example.com", category: safe }
+  - { type: click_button, label: "Save", button_role: save, category: commit }
+
+fixture:
+  reset: unique_name
+  pre_seed:
+    - doctype: Lead
+      fields:
+        first_name: Jane
+        last_name: Doe
+        company_name: "{lead_name}"
+        status: Lead
+
+graders:
+  - kind: db
+    endpoint: "/api/resource/Lead?filters=[[\"company_name\",\"=\",\"{lead_name}\"]]&fields=[\"name\",\"email_id\"]&limit_page_length=1"
+    fetch_first_from_list: true
+    expect:
+      email_id: "jane.doe.{slug}@example.com"

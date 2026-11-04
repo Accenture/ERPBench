@@ -1,0 +1,41 @@
+# T1 — dropdown on a non-Customer doctype. Lead.status is a Select field
+# with hard-coded options (Lead / Open / Replied / Opportunity / ...).
+# Lead's `name` is auto-generated (CRM-LEAD-YYYY-NNNNN), so the grader
+# uses fetch_first_from_list to look up by company_name.
+
+id: t1_change_lead_status
+tier: T1
+task_type: other_edit
+prompt: >-
+  Open the Lead for company '{lead_name}' (search the Lead list to find it)
+  and change its Status from 'Lead' to 'Open'. Save the record.
+mode: do
+start_url: "http://erpnext-frontend:8080/app/lead"
+brain: any
+max_actions: 14
+timeout_seconds: 300
+
+expected_actions:
+  - { type: click_link,     label: "CRM",              category: safe }
+  - { type: click_link,     label: "Lead",             category: safe }
+  - { type: click_link,     label: "{lead_name}",      category: safe }
+  - { type: click_dropdown, label: "Status",           category: safe }
+  - { type: select_option,  text: "Open",              category: safe }
+  - { type: click_button,   label: "Save", button_role: save, category: commit }
+
+fixture:
+  reset: unique_name
+  pre_seed:
+    - doctype: Lead
+      fields:
+        first_name: Jane
+        last_name: "Doe-{lead_name}"
+        company_name: "{lead_name}"
+        status: Lead
+
+graders:
+  - kind: db
+    endpoint: "/api/resource/Lead?filters=[[\"company_name\",\"=\",\"{lead_name}\"]]&fields=[\"name\",\"status\",\"company_name\"]&limit_page_length=1"
+    fetch_first_from_list: true
+    expect:
+      status: Open

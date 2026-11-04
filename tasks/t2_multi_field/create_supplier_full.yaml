@@ -1,0 +1,56 @@
+# T2 — Supplier creation (sibling of customer creation; tests the same pattern
+# on a different doctype to confirm the brain isn't memorising Customer-specific
+# layout).
+
+id: t2_create_supplier_full
+tier: T2
+task_type: multi_field_create
+prompt: |-
+  You are on the Supplier list — click 'Add Supplier' to open a blank new form before filling any fields.
+
+  Create a new Supplier in ERPNext. All 6 fields below must be filled in BEFORE you click Save — do not save until every field is set.
+
+  1. Supplier Name: {supplier_name}
+  2. Supplier Type: Company
+  3. Supplier Group: Local
+  4. Country: United States
+  5. Tax ID: SUP-{slug}-T2
+  6. Website: https://supplier-{slug}.acme.test
+
+  For fields that show a search dropdown as you type (such as Supplier Group, Country), type the value and click the matching suggestion that appears — the field is not set until you click it.
+
+  After all 6 fields are set on the form, click Save exactly once.
+mode: do
+start_url: "http://erpnext-frontend:8080/app/supplier"
+brain: any
+max_actions: 30
+timeout_seconds: 600
+
+expected_actions:
+  - { type: click_link,    label: "Buying",            category: safe }
+  - { type: click_link,    label: "Supplier",          category: safe }
+  - { type: click_button,  label: "Add Supplier", button_role: navigate, category: safe }
+  - { type: click_field,   label: "Supplier Name",     category: safe }
+  - { type: type,          text:  "{supplier_name}",   category: safe }
+  - { type: click_dropdown, label: "Supplier Group",   category: safe }
+  - { type: select_option, text:  "Local",             category: safe }
+  - { type: click_button,  label: "Save", button_role: save, category: commit }
+
+fixture:
+  reset: unique_name
+  pre_seed: []
+
+graders:
+  - kind: db
+    endpoint: /api/resource/Supplier/{supplier_name}
+    # email_id / mobile_no live on the linked Contact, not on Supplier directly.
+    # country is surfaced directly on the Supplier doc in ERPNext v15 and is
+    # confirmed graded correctly in benchmark runs.
+    expect_with_weights:
+      # Uniform weighting — every field counts equally. Total weight = 6.0.
+      supplier_name:  { value: "{supplier_name}",       weight: 1.0 }
+      supplier_type:  { value: Company,                 weight: 1.0 }
+      supplier_group: { value: Local,                   weight: 1.0 }
+      country:        { value: United States,           weight: 1.0 }
+      tax_id:         { value: "SUP-{slug}-T2",           weight: 1.0 }
+      website:        { value: "https://supplier-{slug}.acme.test", weight: 1.0 }

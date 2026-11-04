@@ -1,0 +1,82 @@
+# T3 — CRM qualification chain: Lead → Opportunity → pipeline advance.
+# Non-submittable, no Company/Fiscal Year prereq.
+#
+# Three graded state transitions across two doctypes:
+#   Lead.status        = 'Opportunity'   (state transition on the seed)
+#   Opportunity created from Lead:
+#     opportunity_from = 'Lead'           (link verified)
+#   Opportunity.status = 'Quotation'     (pipeline advancement)
+
+id: t3_lead_to_opportunity_comment
+tier: T3
+task_type: chained_workflow
+prompt: |-
+  A Lead for company '{lead_name}' has been seeded. Move it through
+  three stages of the CRM qualification pipeline:
+
+  1. Open the Lead for '{lead_name}' from the Lead list (you can
+     search by the organization / company name if needed).
+
+  2. Change the Lead's Status from 'Lead' to 'Opportunity'. Save.
+
+  3. From the Lead you just updated, use the 'Actions' or 'Create'
+     menu at the top of the form and click 'Opportunity'. This opens
+     a new Opportunity form pre-populated from the Lead. Verify:
+     - Opportunity From: Lead
+     - Party Name / Party: auto-populated to this Lead
+     Do not change these. Save the Opportunity (do NOT submit).
+
+  4. On the same Opportunity form (or reopen it if needed), find the
+     Status field. Change it from 'Open' to 'Quotation'. Save the
+     Opportunity with Ctrl+S.
+human_prompt: |-
+  A Lead for company "{lead_name}" already exists. Move it through three steps.
+
+  1. Open that Lead (search by the company name if needed). Change its Status
+     from "Lead" to "Opportunity". Save.
+  2. From that Lead, use the 'Actions' or 'Create' menu at the top of the form
+     and choose 'Opportunity'. A new Opportunity opens, pre-filled from the
+     Lead (Opportunity From = Lead). Leave those values as they are. Save
+     (do NOT submit).
+  3. On that Opportunity, change its Status from "Open" to "Quotation". Save
+     (Ctrl+S).
+
+  Done when the Lead's status is "Opportunity" and an Opportunity created from
+  it exists with status "Quotation".
+mode: do
+start_url: "http://erpnext-frontend:8080/app/lead"
+brain: any
+max_actions: 80
+timeout_seconds: 1500
+
+fixture:
+  reset: unique_name
+  pre_seed:
+    - doctype: Lead
+      fields:
+        first_name: Jane
+        last_name: "Doe-{lead_name}"
+        company_name: "{lead_name}"
+        status: Lead
+
+graders:
+  # Lead status advanced to 'Opportunity'.
+  - kind: db
+    endpoint: "/api/resource/Lead?filters=[[\"company_name\",\"=\",\"{lead_name}\"]]&limit_page_length=1"
+    fetch_first_from_list: true
+    expect:
+      status: Opportunity
+
+  # Opportunity was created linked to this Lead.
+  - kind: db
+    endpoint: "/api/resource/Opportunity?filters=[[\"customer_name\",\"=\",\"{lead_name}\"]]&limit_page_length=1"
+    fetch_first_from_list: true
+    expect:
+      opportunity_from: Lead
+
+  # Opportunity status was advanced to 'Quotation' (pipeline step 4).
+  - kind: db
+    endpoint: "/api/resource/Opportunity?filters=[[\"customer_name\",\"=\",\"{lead_name}\"]]&limit_page_length=1"
+    fetch_first_from_list: true
+    expect:
+      status: Quotation

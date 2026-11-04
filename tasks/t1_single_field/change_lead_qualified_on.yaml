@@ -1,0 +1,63 @@
+# T1 — DATE FIELD on Lead (forced calendar-widget path).
+#
+# REPLACES change_lead_next_contact_date.yaml. The original task targeted
+# Lead.next_contact_date — which DOES NOT EXIST on the ERPNext v15 Lead
+# doctype (confirmed via DocType meta walk: 67 fields, no next_contact_date;
+# POST with the key is silently dropped; grader returns HTTP 417 "Field not
+# permitted").
+#
+# qualified_on IS a real Date field on Lead, in the Qualification section
+# of the top tab. Same forced calendar-widget purpose; same comparison
+# value against change_item_end_of_life (Item.end_of_life). Same pass
+# criteria as the rest of T1 (≥ 80% / 4/5 runs) — no bar adjustment.
+#
+# This task preserves the cross-doctype calendar-widget signal we wanted:
+# the same widget on two different forms. If qualified_on passes 5/5, we
+# confirm calendar grounding on Lead works; if it fails, we have isolated
+# the difficulty to "Lead form layout" rather than "the calendar widget
+# itself" (which we already know is operable from Item.end_of_life 5/5).
+
+id: t1_change_lead_qualified_on
+tier: T1
+task_type: other_edit
+prompt: >-
+  Open the Lead for company '{lead_name}' (search the Lead list to find it)
+  and set the 'Qualified on' date field to 15 August 2026.
+
+  USE THE CALENDAR PICKER — open the date popup, navigate to August 2026
+  using the month/year navigation arrows if necessary, and click on the
+  day '15' cell in the day grid. Do NOT type the date directly into the
+  field. The calendar picker click is required.
+
+  Save the record.
+mode: do
+start_url: "http://erpnext-frontend:8080/app/lead"
+brain: any
+max_actions: 25
+timeout_seconds: 600
+
+expected_actions:
+  - { type: click_link,    label: "CRM",                  category: safe }
+  - { type: click_link,    label: "Lead",                 category: safe }
+  - { type: click_link,    label: "{lead_name}",          category: safe }
+  - { type: click_field,   label: "Qualified on",         category: safe }   # opens calendar
+  # Calendar navigation actions (variable — brain may need month/year nav)
+  - { type: click_field,   label: "15",                   category: safe }   # day cell
+  - { type: click_button,  label: "Save", button_role: save, category: commit }
+
+fixture:
+  reset: unique_name
+  pre_seed:
+    - doctype: Lead
+      fields:
+        first_name: Jane
+        last_name: "Doe-{lead_name}"
+        company_name: "{lead_name}"
+        status: Lead
+
+graders:
+  - kind: db
+    endpoint: "/api/resource/Lead?filters=[[\"company_name\",\"=\",\"{lead_name}\"]]&fields=[\"name\"]&limit_page_length=1"
+    fetch_first_from_list: true
+    expect:
+      qualified_on: "2026-08-15"

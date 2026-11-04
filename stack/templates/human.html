@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ERPBench — annotator</title>
+<style>
+  :root { --ink:#1f2430; --muted:#6b7280; --line:#e5e7eb; --accent:#4338ca; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+         color:var(--ink); background:#f6f7f9; display:flex; height:100vh; overflow:hidden; }
+  /* Kept narrow so the scaled 1280x720 screen stays close to native size. */
+  #panel { width:320px; min-width:320px; background:#fff; border-right:1px solid var(--line);
+           display:flex; flex-direction:column; padding:18px; gap:14px; overflow:hidden; }
+  /* Never let flex squish an item below its content height — that made a long
+     task prompt overflow its box and overlap the buttons/status below it. */
+  #panel > * { flex-shrink:0; }
+  #screen { flex:1; display:flex; background:#111; min-width:0; }
+  #screen iframe { flex:1; width:100%; height:100%; border:0; display:block; }
+  h1 { font-size:13px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted);
+       margin:0; font-weight:600; }
+  /* The task box is the one scrollable region: flex:1 1 auto makes it fill the
+     leftover panel height (bounded, since the panel is 100vh), and overflow-y:auto
+     scrolls any prompt taller than that — so a long prompt never pushes Start/Done
+     off-screen or overlaps them. Every other panel child stays flex-shrink:0. */
+  #task { font-size:17px; line-height:1.5; padding:16px; background:#f9fafb;
+          border:1px solid var(--line); border-radius:10px; white-space:pre-wrap;
+          flex:1 1 auto; min-height:120px; overflow-y:auto; }
+  #task.waiting { color:var(--muted); font-style:italic; font-size:15px; }
+  #timer { font-variant-numeric:tabular-nums; font-size:34px; font-weight:600; letter-spacing:-.02em; }
+  #timer.over { color:#b91c1c; }
+  .row { display:flex; gap:10px; }
+  button { flex:1; padding:13px 10px; font-size:15px; font-weight:600; border-radius:9px;
+           border:1px solid var(--line); background:#fff; cursor:pointer; }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  #start { background:var(--accent); border-color:var(--accent); color:#fff; }
+  #done  { background:#047857; border-color:#047857; color:#fff; }
+  #stuck { background:#fff; color:#b91c1c; border-color:#fca5a5; }
+  #taskhint { font-size:13px; color:#374151; background:#fffbeb; border:1px solid #fde68a;
+          border-left:3px solid #f59e0b; border-radius:8px; padding:10px 12px; line-height:1.5; }
+  #taskhint .th-h { font-size:10.5px; font-weight:700; letter-spacing:.05em; text-transform:uppercase;
+          color:#b45309; margin-bottom:5px; }
+  #meta { font-size:12px; color:var(--muted); border-top:1px solid var(--line); padding-top:12px;
+          line-height:1.7; }
+  #msg { font-size:13px; padding:10px 12px; border-radius:8px; display:none; }
+  #msg.show { display:block; }
+  #msg.err { background:#fef2f2; color:#991b1b; }
+  #msg.ok  { background:#ecfdf5; color:#065f46; }
+  code { font-size:11px; }
+</style>
+</head>
+<body>
+
+<div id="panel">
+  <h1>Your task</h1>
+  <div id="task" class="waiting">Waiting for the next task…</div>
+  <div id="taskhint" style="display:none"></div>
+
+  <div id="timer">--:--</div>
+
+  <div class="row">
+    <button id="start">Start</button>
+  </div>
+  <div class="row">
+    <button id="done" disabled>Done</button>
+    <button id="stuck" disabled>I'm stuck</button>
+  </div>
+
+  <div id="msg"></div>
+
+  <div id="meta">
+    <div>Status: <span id="phase">—</span></div>
+    <div>Actions captured: <span id="events">0</span></div>
+    <div>Capture: <span id="inject">not started</span></div>
+    <div>Screen: port <span id="vncport">—</span> ·
+      <a id="vnclink" href="#" target="_blank">open in a tab</a></div>
+  </div>
+</div>
+
+<div id="screen">
+  <iframe id="vnc"></iframe>
+</div>
+
+<script>
+// noVNC runs on container port 3000, published to the host as {{ novnc_port }}
+// (compose: "3002:3000"). Use the HOST port, since this page is loaded in the
+// annotator's browser. ?novnc=<port> overrides for one-off setups.
+const NOVNC_PORT = new URLSearchParams(location.search).get('novnc') || '{{ novnc_port }}';
+// resize=scale fits the whole 1280x720 display into the pane, preserving aspect
+// ratio, so nothing is clipped on the right and no scrolling is needed.
+// NEVER use resize=remote: that resizes the actual X display away from
+// 1280x720, which is the exact frame the agents were given. Changing it would
+// break the human-versus-agent comparison.
+const VNC_URL = location.protocol + '//' + location.hostname + ':' + NOVNC_PORT +
+                '/vnc.html?autoconnect=1&resize=scale&reconnect=1&view_clip=0';
+document.getElementById('vnc').src = VNC_URL;
+document.getElementById('vnclink').href = VNC_URL;
+document.getElementById('vncport').textContent = NOVNC_PORT;
+
+let started = null, limit = 300, tick = null, curTask = null, finishing = false;
+
+const $ = id => document.getElementById(id);
+function show(kind, text) {
+  const m = $('msg'); m.className = 'show ' + kind; m.textContent = text;
+}
+function hide() { $('msg').className = ''; }
+
+function fmt(s) {
+  const m = Math.floor(s / 60), r = s % 60;
+  return String(m).padStart(2,'0') + ':' + String(r).padStart(2,'0');
+}
+
+function renderTimer() {
+  if (started === null) { $('timer').textContent = '--:--'; return; }
+  const el = Math.floor((Date.now() - started) / 1000);
+  $('timer').textContent = fmt(Math.max(0, limit - el));
+  $('timer').className = (el >= limit) ? 'over' : '';
+  // The limit is enforced here, counted from the Start click, so it matches the
+  // allowance the agents got. The runner's own wait is only a hang guard.
+  if (el >= limit && !finishing) {
+    show('err', 'Time limit reached. Recording as timed out.');
+    finish('timeout');
+  }
+}
+
+async function poll() {
+  try {
+    const r = await fetch('/human/session');
+    const s = await r.json();
+    $('phase').textContent = s.phase || '—';
+    $('events').textContent = s.events || 0;
+
+    // A new task appeared: reset the panel for it.
+    if (s.task_id_active && s.task_id_active !== curTask) {
+      curTask = s.task_id_active;
+      started = null;
+      if (tick) { clearInterval(tick); tick = null; }
+      $('task').textContent = s.task_text || '(no text)';
+      $('task').className = '';
+      // Per-task guidance from the task yaml's `human_hint` (panel-only; agents
+      // never see it). Shown right under the task text for THIS task only.
+      const hint = (s.task_hint || '').trim();
+      const th = $('taskhint');
+      if (hint) {
+        th.innerHTML = '<div class="th-h">How to do this reliably</div>' +
+                       hint.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        th.style.display = 'block';
+      } else {
+        th.style.display = 'none';
+        th.textContent = '';
+      }
+      // The runner pushes the task's real timeout_seconds to /human/limit.
+      // Never guess from the prompt text: T1 creates allow 300s and T2 creates
+      // allow 600s, and both say "create".
+      limit = s.limit_s || 300;
+      finishing = false;
+      $('start').disabled = false;
+      $('done').disabled = true;
+      $('stuck').disabled = true;
+      $('inject').textContent = 'not started';
+      renderTimer();
+      hide();
+    }
+    if (!s.task_id_active && curTask) {
+      curTask = null; started = null;
+      if (tick) { clearInterval(tick); tick = null; }
+      $('task').textContent = 'Waiting for the next task…';
+      $('task').className = 'waiting';
+      $('taskhint').style.display = 'none';
+      $('start').disabled = true;
+      $('done').disabled = true;
+      $('stuck').disabled = true;
+      renderTimer();
+    }
+  } catch (e) { /* observer briefly unavailable between tasks */ }
+}
+
+$('start').onclick = async () => {
+  $('start').disabled = true;
+  try {
+    const r = await fetch('/human/start', {method:'POST'});
+    const j = await r.json();
+    if (!r.ok) { show('err', j.error || 'could not start'); $('start').disabled = false; return; }
+    started = Date.now();
+    tick = setInterval(renderTimer, 1000);
+    renderTimer();
+    $('done').disabled = false;
+    $('stuck').disabled = false;
+    $('inject').textContent = j.injected ? 'active' : ('FAILED — ' + (j.detail || ''));
+    if (!j.injected) show('err', 'Capture did not install. Tell the session lead before continuing.');
+    else hide();
+  } catch (e) {
+    show('err', 'could not reach the observer'); $('start').disabled = false;
+  }
+};
+
+async function finish(outcome) {
+  if (finishing) return;          // timer and button must not both submit
+  finishing = true;
+  $('done').disabled = true; $('stuck').disabled = true;
+  if (tick) { clearInterval(tick); tick = null; }
+  const secs = started ? Math.floor((Date.now() - started) / 1000) : 0;
+  try {
+    await fetch('/human/stop', {method:'POST'});
+    await fetch('/complete_task', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        summary: 'Human annotator: ' + outcome + ' after ' + secs + 's.',
+        final_observation: {kind:'state_summary', details:{human_outcome:outcome, elapsed_s:secs}}
+      })
+    });
+    const label = {done:'Recorded.', stuck:'Marked stuck.', timeout:'Recorded as timed out.'}[outcome];
+    show('ok', label + ' Next task loading…');
+    started = null;
+  } catch (e) {
+    show('err', 'could not record — tell the session lead');
+    finishing = false;
+    $('done').disabled = false; $('stuck').disabled = false;
+  }
+}
+
+$('done').onclick  = () => finish('done');
+$('stuck').onclick = () => finish('stuck');
+
+poll();
+setInterval(poll, 1200);
+</script>
+</body>
+</html>

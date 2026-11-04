@@ -1,0 +1,47 @@
+# WARM-UP ONLY — never part of the benchmark suite.
+#
+# Deliberately NOT one of the 20 T1 or 4 T2 tasks: no benchmark task edits an
+# existing Supplier, so practising on this contaminates nothing.
+#
+# Shape matches a T1 select/toggle task (navigate -> open record -> change one
+# field -> Save), so the annotator sees the full flow once, including the fact
+# that typing or selecting a value does not persist until Save is pressed.
+#
+# Lives in tasks/warmup/, which is NOT a tier_dirs entry in runner.py, so
+# `--suite t1` / `--suite t1,t2` can never pick it up. Run it explicitly with
+# --task and a throwaway --run-id.
+#
+# NOTE: smoke-test this once before the first annotator session.
+
+id: warmup_change_supplier_type
+tier: WARMUP
+task_type: other_edit
+prompt: >-
+  Open the supplier named '{supplier_name}' and change its 'Supplier Type'
+  from 'Company' to 'Individual'. Save the record.
+mode: do
+start_url: "http://erpnext-frontend:8080/app/supplier"
+brain: any
+max_actions: 14
+timeout_seconds: 300
+
+expected_actions:
+  - { type: click_link,     label: "{supplier_name}",  category: safe }
+  - { type: click_dropdown, label: "Supplier Type",    category: safe }
+  - { type: select_option,  text:  "Individual",       category: safe }
+  - { type: click_button,   label: "Save", button_role: save, category: commit }
+
+fixture:
+  reset: unique_name
+  pre_seed:
+    - doctype: Supplier
+      fields:
+        supplier_name:  "{supplier_name}"
+        supplier_type:  Company
+        supplier_group: "All Supplier Groups"
+
+graders:
+  - kind: db
+    endpoint: /api/resource/Supplier/{supplier_name}
+    expect:
+      supplier_type: "Individual"

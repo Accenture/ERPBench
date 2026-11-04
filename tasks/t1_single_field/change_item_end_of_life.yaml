@@ -1,0 +1,48 @@
+# T1 — DATE FIELD (forced calendar-widget path, second doctype). Item.end_of_life
+# is a Date field on the Item doctype. Same forcing rules as
+# change_lead_next_contact_date.yaml — calendar picker required, no text shortcut.
+#
+# Why two date tasks across two doctypes: to confirm whether calendar
+# success/failure is a UI-level property of Frappe (consistent across
+# doctypes) or context-dependent (varies by form).
+
+id: t1_change_item_end_of_life
+tier: T1
+task_type: other_edit
+prompt: >-
+  Open the Item with code '{item_name}' and set the 'End of Life' date
+  field to 31 December 2027.
+
+  USE THE CALENDAR PICKER — open the date popup, navigate to December 2027
+  using the month/year navigation arrows if necessary, and click on the
+  day '31' cell in the day grid. Do NOT type the date directly into the
+  field. The calendar picker click is required.
+
+  Save the record.
+mode: do
+start_url: "http://erpnext-frontend:8080/app/item"
+brain: any
+max_actions: 25
+timeout_seconds: 600
+
+expected_actions:
+  - { type: click_link,    label: "{item_name}",          category: safe }
+  - { type: click_field,   label: "End of Life",          category: safe }   # opens calendar
+  - { type: click_field,   label: "31",                   category: safe }   # day cell
+  - { type: click_button,  label: "Save", button_role: save, category: commit }
+
+fixture:
+  reset: unique_name
+  pre_seed:
+    - doctype: Item
+      fields:
+        item_code: "{item_name}"
+        item_name: "{item_name}"
+        item_group: Products
+        stock_uom: Nos
+
+graders:
+  - kind: db
+    endpoint: /api/resource/Item/{item_name}
+    expect:
+      end_of_life: "2027-12-31"

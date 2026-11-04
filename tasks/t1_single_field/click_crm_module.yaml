@@ -1,0 +1,42 @@
+# T1 — SIDEBAR NAVIGATION. Tests whether the brain can click a module
+# item in the ERPNext left sidebar ("CRM") and drill down to a record.
+# Starts from the home/desk page so the sidebar navigation is required.
+# Verification: change Lead status so the nav chain is DB-observable.
+
+id: t1_click_crm_module
+tier: T1
+task_type: other_edit
+prompt: >-
+  Click on 'CRM' in the left sidebar to open the CRM workspace. Then click on
+  'Lead' to open the lead list. Find the lead for organization '{lead_name}'
+  and open it. Change its status to 'Open' and save the record.
+mode: do
+start_url: "http://erpnext-frontend:8080/app/home"
+brain: any
+max_actions: 18
+timeout_seconds: 300
+
+expected_actions:
+  - { type: click_link,    label: "CRM",       category: safe }
+  - { type: click_link,    label: "Lead",      category: safe }
+  - { type: click_link,    label: "{lead_name}", category: safe }
+  - { type: click_field,   label: "Status",    category: safe }
+  - { type: select_option, text: "Open",       category: safe }
+  - { type: click_button,  label: "Save", button_role: save, category: commit }
+
+fixture:
+  reset: unique_name
+  pre_seed:
+    - doctype: Lead
+      fields:
+        first_name: Jane
+        last_name: Doe
+        company_name: "{lead_name}"
+        status: Lead
+
+graders:
+  - kind: db
+    endpoint: "/api/resource/Lead?filters=[[\"company_name\",\"=\",\"{lead_name}\"]]&fields=[\"name\",\"status\"]&limit_page_length=1"
+    fetch_first_from_list: true
+    expect:
+      status: "Open"

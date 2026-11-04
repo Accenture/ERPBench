@@ -1,0 +1,242 @@
+# ERPBench — ERPNext + observer stack
+#
+# Run:
+#   cp .env.example .env  (fill in ANTHROPIC_API_KEY)
+#   docker compose up --build
+#
+# First boot pulls ~1.5GB of ERPNext images and provisions the site (~5-10 min).
+# Subsequent boots: ~30s. ERPNext data persists across `docker compose down` via
+# named volumes; wipe with `docker compose down -v`.
+
+x-erpnext-image: &erpnext_image frappe/erpnext:v15
+
+services:
+  # ─── ERPNext datastores ─────────────────────────────────────────
+  erpnext-db:
+    image: mariadb:10.6
+    container_name: erpnext-db-v2
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --skip-character-set-client-handshake
+      - --skip-innodb-read-only-compressed
+    environment:
+      MYSQL_ROOT_PASSWORD: admin
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "--password=admin"]
+      interval: 2s
+      retries: 30
+    volumes:
+      - erpnext-db-data:/var/lib/mysql
+    restart: unless-stopped
+
+  erpnext-redis-cache:
+    image: redis:6.2-alpine
+    container_name: erpnext-redis-cache-v2
+    restart: unless-stopped
+
+  erpnext-redis-queue:
+    image: redis:6.2-alpine
+    container_name: erpnext-redis-queue-v2
+    restart: unless-stopped
+
+  # ─── One-shot: write site config ────────────────────────────────
+  erpnext-configurator:
+    image: *erpnext_image
+    container_name: erpnext-configurator-v2
+    depends_on:
+      erpnext-db:
+        condition: service_healthy
+      erpnext-redis-cache:
+        condition: service_started
+      erpnext-redis-queue:
+        condition: service_started
+    entrypoint: ["bash", "-c"]
+    command:
+      - >
+        ls -1 apps > sites/apps.txt;
+        bench set-config -g db_host erpnext-db;
+        bench set-config -gp db_port 3306;
+        bench set-config -g redis_cache "redis://erpnext-redis-cache:6379";
+        bench set-config -g redis_queue "redis://erpnext-redis-queue:6379";
+        bench set-config -g redis_socketio "redis://erpnext-redis-queue:6379";
+        bench set-config -gp socketio_port 9000;
+    volumes:
+      - erpnext-sites:/home/frappe/frappe-bench/sites
+      - erpnext-logs:/home/frappe/frappe-bench/logs
+
+  # ─── One-shot: create the site, install erpnext ─────────────────
+  erpnext-create-site:
+    image: *erpnext_image
+    container_name: erpnext-create-site-v2
+    depends_on:
+      erpnext-configurator:
+        condition: service_completed_successfully
+    entrypoint: ["bash", "-c"]
+    command:
+      - >
+        wait-for-it -t 120 erpnext-db:3306;
+        wait-for-it -t 120 erpnext-redis-cache:6379;
+        wait-for-it -t 120 erpnext-redis-queue:6379;
+        export start=$$(date +%s);
+        until [[ -n "$$(grep -hs ^ sites/common_site_config.json | jq -r '.db_host')" ]] && \
+              [[ -n "$$(grep -hs ^ sites/common_site_config.json | jq -r '.redis_cache')" ]] && \
+              [[ -n "$$(grep -hs ^ sites/common_site_config.json | jq -r '.redis_queue')" ]];
+        do
+          echo "Waiting for sites/common_site_config.json to be created";
+          sleep 5;
+          if (( $$(date +%s) - start > 120 )); then echo "could not find sites/common_site_config.json"; exit 1; fi;
+        done;
+        echo "sites/common_site_config.json found";
+        if [ -f "sites/frontend/site_config.json" ]; then echo "site 'frontend' already exists; skipping bench new-site"; exit 0; fi;
+        bench new-site --mariadb-user-host-login-scope='%' --admin-password=admin --db-root-username=root --db-root-password=admin --install-app erpnext --set-default frontend;
+    volumes:
+      - erpnext-sites:/home/frappe/frappe-bench/sites
+      - erpnext-logs:/home/frappe/frappe-bench/logs
+
+  # ─── Long-running ERPNext services ──────────────────────────────
+  erpnext-backend:
+    image: *erpnext_image
+    container_name: erpnext-backend-v2
+    depends_on:
+      erpnext-create-site:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    volumes:
+      - erpnext-sites:/home/frappe/frappe-bench/sites
+      - erpnext-logs:/home/frappe/frappe-bench/logs
+
+  erpnext-queue-short:
+    image: *erpnext_image
+    container_name: erpnext-queue-short-v2
+    depends_on:
+      erpnext-create-site:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    command: bench worker --queue short,default
+    volumes:
+      - erpnext-sites:/home/frappe/frappe-bench/sites
+      - erpnext-logs:/home/frappe/frappe-bench/logs
+
+  erpnext-queue-long:
+    image: *erpnext_image
+    container_name: erpnext-queue-long-v2
+    depends_on:
+      erpnext-create-site:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    command: bench worker --queue long,default,short
+    volumes:
+      - erpnext-sites:/home/frappe/frappe-bench/sites
+      - erpnext-logs:/home/frappe/frappe-bench/logs
+
+  erpnext-scheduler:
+    image: *erpnext_image
+    container_name: erpnext-scheduler-v2
+    depends_on:
+      erpnext-create-site:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    command: bench schedule
+    volumes:
+      - erpnext-sites:/home/frappe/frappe-bench/sites
+      - erpnext-logs:/home/frappe/frappe-bench/logs
+
+  erpnext-websocket:
+    image: *erpnext_image
+    container_name: erpnext-websocket-v2
+    depends_on:
+      erpnext-create-site:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    command: node /home/frappe/frappe-bench/apps/frappe/socketio.js
+    volumes:
+      - erpnext-sites:/home/frappe/frappe-bench/sites
+      - erpnext-logs:/home/frappe/frappe-bench/logs
+
+  erpnext-frontend:
+    image: *erpnext_image
+    container_name: erpnext-frontend-v2
+    depends_on:
+      erpnext-backend:
+        condition: service_started
+      erpnext-websocket:
+        condition: service_started
+    environment:
+      BACKEND: erpnext-backend:8000
+      SOCKETIO: erpnext-websocket:9000
+      FRAPPE_SITE_NAME_HEADER: frontend
+      UPSTREAM_REAL_IP_ADDRESS: 127.0.0.1
+      UPSTREAM_REAL_IP_HEADER: X-Forwarded-For
+      UPSTREAM_REAL_IP_RECURSIVE: "off"
+      PROXY_READ_TIMEOUT: "120"
+      CLIENT_MAX_BODY_SIZE: 50m
+    command: nginx-entrypoint.sh
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - erpnext-sites:/home/frappe/frappe-bench/sites
+      - erpnext-logs:/home/frappe/frappe-bench/logs
+    restart: unless-stopped
+
+  # ─── The observer ───────────────────────────────────────────────
+  observer:
+    build: .
+    container_name: erpbench-observer
+    shm_size: '1gb'
+    depends_on:
+      erpnext-create-site:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:3002:3000"   # noVNC
+      - "127.0.0.1:5052:5051"   # Flask
+    volumes:
+      - ./stack:/app/observer
+      - ./logs:/app/logs
+    environment:
+      # The observer must listen on all interfaces inside the container for the
+      # port mapping above; the mapping itself is bound to the host's loopback.
+      OBSERVER_BIND: 0.0.0.0
+      # Brain selection — claude (default), qwen, uitars, or opencua. See .env.example.
+      BRAIN_PROVIDER: ${BRAIN_PROVIDER:-claude}
+      # Anthropic — required when BRAIN_PROVIDER=claude. Empty if using Qwen/UI-TARS.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      CLAUDE_MODEL: ${CLAUDE_MODEL:-claude-sonnet-4-6}
+      MAX_INVESTIGATION_ROUNDS: ${MAX_INVESTIGATION_ROUNDS:-3}
+      # Qwen3-VL via an OpenAI-compatible endpoint — required when BRAIN_PROVIDER=qwen.
+      QWEN_API_KEY: ${QWEN_API_KEY:-}
+      QWEN_BASE_URL: ${QWEN_BASE_URL:-}
+      QWEN_MODEL: ${QWEN_MODEL:-qwen3-vl-32b-instruct}
+      # OpenCUA (vLLM, OpenAI-compatible) — required when BRAIN_PROVIDER=opencua.
+      # Same brain for any size; set OPENCUA_MODEL to opencua-7b or opencua-32b.
+      OPENCUA_API_KEY: ${OPENCUA_API_KEY:-}
+      OPENCUA_BASE_URL: ${OPENCUA_BASE_URL:-}
+      OPENCUA_MODEL: ${OPENCUA_MODEL:-opencua-32b}
+      # UI-TARS local model server — used when BRAIN_PROVIDER=uitars and UITARS_API_KEY is unset.
+      UITARS_HOST: ${UITARS_HOST:-http://host.docker.internal:8077}
+      UITARS_DEBUG: ${UITARS_DEBUG:-0}
+      # UI-TARS hosted API (OpenAI-compatible) — set UITARS_API_KEY to use it.
+      # UITARS_HOST is ignored when UITARS_API_KEY is set.
+      UITARS_API_KEY: ${UITARS_API_KEY:-}
+      UITARS_API_BASE_URL: ${UITARS_API_BASE_URL:-}
+      UITARS_API_MODEL: ${UITARS_API_MODEL:-ui-tars-72b-dpo}
+      # Holo3-35B-A3B via an OpenAI-compatible endpoint (used when BRAIN_PROVIDER=holo3).
+      HOLO3_API_KEY: ${HOLO3_API_KEY:-}
+      HOLO3_API_BASE_URL: ${HOLO3_API_BASE_URL:-}
+      HOLO3_API_MODEL: ${HOLO3_API_MODEL:-holo3-35b-a3b}
+      MAX_TURNS_PER_TASK: ${MAX_TURNS_PER_TASK:-50}
+      # Executor: rewrite click_button (Save/Submit/Update) → Ctrl+S at the pyautogui layer.
+      # 'on' (default) uses Frappe's global keydown handler and bypasses the toolbar-Save
+      # pixel-grounding failure. Set to 'off' for a plain coordinate click.
+      EXECUTOR_SAVE_REWRITE: ${EXECUTOR_SAVE_REWRITE:-on}
+      # ERPNext browser session credentials (used by /session_check to re-auth on session loss).
+      ERPNEXT_BROWSER_USR: ${ERPNEXT_BROWSER_USR:-Administrator}
+      ERPNEXT_BROWSER_PWD: ${ERPNEXT_BROWSER_PWD:-admin}
+      # Common
+      TARGET_URL: ${TARGET_URL:-http://erpnext-frontend:8080}
+    restart: unless-stopped
+
+volumes:
+  erpnext-db-data:
+  erpnext-sites:
+  erpnext-logs:

@@ -1,0 +1,42 @@
+# T1 — LIST FILTER + EDIT. Tests the brain's ability to use ERPNext list
+# filters before navigating to a record. The pre-seeded customer has
+# customer_group=Government so it only appears after filtering.
+# Verification: change Tax ID, which is DB-observable.
+
+id: t1_filter_customers_by_group
+tier: T1
+task_type: text_edit
+prompt: >-
+  Open the Customer list. Apply a filter so the list shows only customers
+  with Customer Group = 'Government'. Find the customer named '{customer_name}'
+  in the filtered list, open it, change its Tax ID to 'TX-FILT-{slug}', and save.
+mode: do
+start_url: "http://erpnext-frontend:8080/app/customer"
+brain: any
+max_actions: 22
+timeout_seconds: 300
+
+expected_actions:
+  - { type: click_button,  label: "Filter",         category: safe }
+  - { type: click_field,   label: "Customer Group", category: safe }
+  - { type: select_option, text: "Government",      category: safe }
+  - { type: click_link,    label: "{customer_name}", category: safe }
+  - { type: click_field,   label: "Tax ID",         category: safe }
+  - { type: type,          text:  "TX-FILT-{slug}",    category: safe }
+  - { type: click_button,  label: "Save", button_role: save, category: commit }
+
+fixture:
+  reset: unique_name
+  pre_seed:
+    - doctype: Customer
+      fields:
+        customer_name: "{customer_name}"
+        customer_type: Company
+        customer_group: Government
+        territory: All Territories
+
+graders:
+  - kind: db
+    endpoint: /api/resource/Customer/{customer_name}
+    expect:
+      tax_id: "TX-FILT-{slug}"

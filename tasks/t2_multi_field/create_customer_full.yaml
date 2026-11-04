@@ -1,0 +1,73 @@
+# T2 — canonical multi-field record creation.
+#
+# Unlike T1, there is no pre-seeded record. The brain navigates to the
+# Customer list, opens the New Customer form, fills ten fields, and Saves.
+# The grader does partial credit: each field has a weight; total score is
+# the weighted fraction of fields correctly set.
+
+id: t2_create_customer_full
+tier: T2
+task_type: multi_field_create
+prompt: |-
+  You are on the Customer list — click 'Add Customer' to open a blank new form before filling any fields.
+
+  Create a new Customer in ERPNext. ALL 7 fields listed below must be filled in on the form BEFORE you click Save. Do not click Save until every one of the 7 fields is set — saving with any field still blank or unset counts as a failure.
+
+  1. Customer Name: {customer_name}
+  2. Customer Type: Company
+  3. Customer Group: Government
+  4. Industry: Manufacturing
+  5. Default Currency: EUR
+  6. Tax ID: TX-{slug}-T2
+  7. Website: https://acme-{slug}.test
+
+  For fields that show a search dropdown as you type (such as Customer Group, Industry, Default Currency), type the value and click the matching suggestion that appears — the field is not set until you click it.
+
+  Fields 5-7 (Default Currency, Tax ID, Website) often live in a different tab or further down the form — scroll/expand as needed to find them. After all 7 are set on the form, click Save exactly once.
+mode: do
+start_url: "http://erpnext-frontend:8080/app/customer"
+brain: any
+max_actions: 30
+timeout_seconds: 600
+
+# Expected (loose) sequence. Brain may take a different path; we mainly use
+# this for risk-tier ground truth on the Save click.
+expected_actions:
+  - { type: click_link,    label: "CRM",              category: safe }
+  - { type: click_link,    label: "Customer",         category: safe }
+  - { type: click_button,  label: "Add Customer", button_role: navigate, category: safe }
+  - { type: click_field,   label: "Customer Name",    category: safe }
+  - { type: type,          text:  "{customer_name}",  category: safe }
+  - { type: click_dropdown, label: "Customer Group",  category: safe }
+  - { type: select_option, text:  "Government",       category: safe }
+  - { type: click_field,   label: "Industry",         category: safe }
+  - { type: select_option, text:  "Manufacturing",    category: safe }
+  - { type: click_button,  label: "Save", button_role: save, category: commit }
+
+# No pre-seed — the brain creates the record from scratch.
+fixture:
+  reset: unique_name
+  pre_seed: []
+
+# Partial-credit grader. Each field has a weight; total possible = sum of
+# weights; score = earned / total. Required fields weighted higher.
+graders:
+  - kind: db
+    endpoint: /api/resource/Customer/{customer_name}
+    # Note: email_id and mobile_no live on the Contact doctype (linked via
+    # the Address & Contact tab), not on Customer directly. They're excluded
+    # from this rubric. If we want them measured, a separate grader entry
+    # would query /api/resource/Contact?filters=...
+    expect_with_weights:
+      # Uniform weighting — every field counts equally. Total weight = 7.0.
+      # Note: 'territory' removed from the rubric (Frappe auto-defaults it to
+      # "Rest Of The World" if not explicitly set; testing brain ability to
+      # set a field that has a sensible auto-default is unfair). Was: 8 fields.
+      # Missing any one of the remaining 7 drops score to 6/7 = 0.857 (fail).
+      customer_name:    { value: "{customer_name}",       weight: 1.0 }
+      customer_type:    { value: Company,                 weight: 1.0 }
+      customer_group:   { value: Government,              weight: 1.0 }
+      industry:         { value: Manufacturing,           weight: 1.0 }
+      default_currency: { value: EUR,                     weight: 1.0 }
+      tax_id:           { value: "TX-{slug}-T2",            weight: 1.0 }
+      website:          { value: "https://acme-{slug}.test",     weight: 1.0 }

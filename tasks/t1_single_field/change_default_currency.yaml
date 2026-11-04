@@ -1,0 +1,51 @@
+# T1 — link field. Default Currency is a Link to the Currency doctype.
+# ERPNext ships with USD, EUR, INR, GBP, etc. We change from USD → EUR.
+
+id: t1_change_default_currency
+tier: T1
+task_type: other_edit
+prompt: >-
+  Open the customer named '{customer_name}' and change the Default Currency
+  to 'EUR'. Save the record.
+mode: do
+start_url: "http://erpnext-frontend:8080/app/customer"
+brain: any
+max_actions: 14
+timeout_seconds: 300
+
+# Panel-only guidance for human annotators (agents never receive this; it is
+# not part of the prompt). Default Currency is an autocomplete field that only
+# commits the value when the selection is confirmed.
+human_hint: >-
+  Default Currency is a dropdown. Click the field, type EUR, wait for EUR to
+  appear in the list and select it, then press Enter to lock it in. Before you
+  save, check that the field clearly shows EUR — if it snapped back to the old
+  value, select it again. Only then Save (or Ctrl+S).
+
+expected_actions:
+  - { type: click_link,     label: "CRM",                category: safe }
+  - { type: click_link,     label: "Customer",           category: safe }
+  - { type: click_link,     label: "{customer_name}",    category: safe }
+  - { type: click_link,     label: "Currency and Price List", category: safe }   # may live on a tab
+  - { type: click_field,    label: "Default Currency",   category: safe }
+  - { type: type,           text:  "EUR",                category: safe }
+  - { type: select_option,  text:  "EUR",                category: safe }
+  - { type: click_button,   label: "Save", button_role: save, category: commit }
+
+fixture:
+  reset: unique_name
+  pre_seed:
+    - doctype: Customer
+      fields:
+        customer_name: "{customer_name}"
+        customer_type: Company
+        customer_group: Commercial
+        territory:     All Territories
+        industry:      Technology
+        default_currency: USD
+
+graders:
+  - kind: db
+    endpoint: /api/resource/Customer/{customer_name}
+    expect:
+      default_currency: "EUR"

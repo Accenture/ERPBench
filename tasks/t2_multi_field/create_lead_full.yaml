@@ -1,0 +1,66 @@
+# T2 — Lead creation. Shorter form than Customer/Supplier; tests required
+# fields + email validation.
+
+id: t2_create_lead_full
+tier: T2
+task_type: multi_field_create
+prompt: |-
+  You are on the Lead list — click 'Add Lead' to open a blank new form before filling any fields.
+
+  Create a new Lead in ERPNext. All 9 fields below must be filled in BEFORE you click Save — do not save until every field is set.
+
+  1. Lead Name (First Name): Jane
+  2. Lead Name (Last Name): Doe-{lead_name}
+  3. Organization Name: {lead_name}
+  4. Status: Lead
+  5. Source: Existing Customer
+  6. Email Address: jane.doe.{slug}@acme.example.com
+  7. Mobile No: +1-555-0001
+  8. Industry: Technology
+  9. Territory: All Territories
+
+  For fields that show a search dropdown as you type (such as Status, Source, Industry, Territory), type the value and click the matching suggestion that appears — the field is not set until you click it.
+
+  After all 9 fields are set on the form, click Save exactly once.
+mode: do
+start_url: "http://erpnext-frontend:8080/app/lead"
+brain: any
+max_actions: 30
+timeout_seconds: 600
+
+expected_actions:
+  - { type: click_link,    label: "CRM",               category: safe }
+  - { type: click_link,    label: "Lead",              category: safe }
+  - { type: click_button,  label: "Add Lead", button_role: navigate, category: safe }
+  - { type: click_field,   label: "First Name",        category: safe }
+  - { type: type,          text:  "Jane",              category: safe }
+  - { type: click_field,   label: "Last Name",         category: safe }
+  - { type: type,          text:  "Doe-{lead_name}",   category: safe }
+  - { type: click_field,   label: "Organization Name", category: safe }
+  - { type: type,          text:  "{lead_name}",       category: safe }
+  - { type: click_button,  label: "Save", button_role: save, category: commit }
+
+fixture:
+  reset: unique_name
+  pre_seed: []
+
+# Leads use a Frappe-generated name (CRM-LEAD-YYYY-NNNNN) and cannot be
+# queried directly by lead_name. The grader locates the record via a filtered
+# list query on company_name (the uniquely seeded field) using
+# fetch_first_from_list: true.
+graders:
+  - kind: db
+    endpoint: "/api/resource/Lead?filters=[[\"company_name\",\"=\",\"{lead_name}\"]]&fields=[\"name\",\"first_name\",\"last_name\",\"company_name\",\"status\",\"source\",\"email_id\",\"mobile_no\",\"industry\",\"territory\"]&limit_page_length=1"
+    # Special form: fetch the FIRST matching record from a filtered list.
+    fetch_first_from_list: true
+    expect_with_weights:
+      # Uniform weighting — every field counts equally. Total weight = 9.0.
+      first_name:    { value: Jane,                                  weight: 1.0 }
+      last_name:     { value: "Doe-{lead_name}",                     weight: 1.0 }
+      company_name:  { value: "{lead_name}",                         weight: 1.0 }
+      status:        { value: Lead,                                  weight: 1.0 }
+      source:        { value: Existing Customer,                     weight: 1.0 }
+      email_id:      { value: "jane.doe.{slug}@acme.example.com",           weight: 1.0 }
+      mobile_no:     { value: "+1-555-0001",                         weight: 1.0 }
+      industry:      { value: Technology,                            weight: 1.0 }
+      territory:     { value: All Territories,                       weight: 1.0 }

@@ -1,0 +1,167 @@
+# T3 — Track B: Full sales cycle, OSWorld-hard analog.
+#
+# Cold-start (skip_nav_assist): agent starts from about:blank and must
+# navigate to ERPNext, then chain 4 submitted documents in sequence:
+#   Quotation → Sales Order → Delivery Note → Sales Invoice (all docstatus=1)
+#
+# Each step after the first requires the agent to use the "Create →" button
+# on a submitted document — no blank-form shortcuts. The agent must track
+# where it is in the chain and find the correct Create action each time.
+# This sequential dependency with no shortcut paths is the OSWorld-hard
+# analog property.
+#
+# Pre-seed: Customer "Cust-{slug}" and Item "Item-{slug}" created via API.
+# Agent does NOT create those master records.
+#
+# Teardown note: all 4 documents are submitted (docstatus=1). Teardown
+# requires cancel-before-delete. The filter-query teardown fix (harness
+# plan #1) must be in place before running at scale, or submitted docs
+# will leak between runs.
+#
+id: t3_full_sales_cycle
+tier: T3
+task_type: chained_workflow
+skip_nav_assist: true
+prompt: |-
+  Your browser is on a blank page (about:blank). ERPNext is hosted at
+  http://erpnext-frontend:8080. The unique run identifier is: {slug}
+
+  Two master records already exist for you:
+    - Customer: Cust-{slug}
+    - Item Code: Item-{slug}
+
+  Complete the following steps IN ORDER. Steps 2, 3, and 4 must each be
+  created from the previous submitted document using the Create button in
+  the toolbar — do NOT navigate to a blank form for those steps.
+
+  0. Open ERPNext:
+     Navigate to: http://erpnext-frontend:8080/app/quotation
+     (Use navigate_url — do NOT try to click the browser address bar.)
+     You should land on the Quotation list.
+
+  1. Create and submit a Quotation:
+     - Click '+ New' or '+ Add Quotation' to open a blank draft form.
+     - The 'Quotation To' field should already say 'Customer' — leave it.
+     - Set the Customer field: Cust-{slug}
+       (type "Cust-{slug}" into the field, then press Tab to confirm.)
+     - In the Items table, add one item row and fill it:
+         Item Code: Item-{slug}  (type it, Tab to confirm)
+         Qty: 1
+         Rate: 500
+       Ensure exactly one item row is filled and no empty item rows remain —
+       an empty item row blocks saving.
+     - If a 'Valid Till' date field is highlighted, leave the default value
+       or pick today — spend at most one action on it, then move on.
+     - Save with Ctrl+S.
+     - Click the 'Submit' button in the toolbar, then click 'Yes' to confirm.
+     - Wait until the status indicator shows 'Submitted'.
+
+  2. Create and submit a Sales Order from the Quotation:
+     - On the submitted Quotation, click the 'Create' button (or dropdown)
+       in the top toolbar and choose 'Sales Order'.
+     - The Sales Order form opens pre-filled — do NOT change any fields.
+     - Save with Ctrl+S.
+     - Click Submit → Yes. Wait for 'Submitted' status.
+
+  3. Create and submit a Delivery Note from the Sales Order:
+     - On the submitted Sales Order, click Create → 'Delivery Note'.
+     - The Delivery Note form opens pre-filled — do NOT change any fields.
+     - Save with Ctrl+S.
+     - Click Submit → Yes. Wait for 'Submitted' status.
+
+  4. Create and submit a Sales Invoice from the Delivery Note:
+     - On the submitted Delivery Note, click Create → 'Sales Invoice'.
+     - The Sales Invoice form opens pre-filled — do NOT change any fields.
+     - Save with Ctrl+S.
+     - Click Submit → Yes. Wait for 'Submitted' status.
+
+  Stop after submitting the Sales Invoice. Do NOT create any further documents.
+
+human_prompt: |-
+  Build a full sales cycle: four linked documents, each created from the
+  previous one and submitted. Two records already exist for you:
+  Customer "Cust-{slug}" and Item "Item-{slug}".
+
+  1. Create and submit a Quotation:
+     - On the Quotation list, click '+ New' (or '+ Add Quotation') to open a
+       blank draft.
+     - 'Quotation To' should already say 'Customer' — leave it.
+     - Set Customer to "Cust-{slug}" (type it, then press Tab to confirm).
+     - In the Items table, add one item row: Item "Item-{slug}", Qty 1,
+       Rate 500. Ensure exactly one item row is filled and no empty item rows
+       remain (an empty row blocks saving).
+     - If a 'Valid Till' date is highlighted, leave the default or pick today.
+     - Save (Ctrl+S), then click 'Submit' and confirm 'Yes'. Wait until the
+       status shows 'Submitted'.
+  2. From the submitted Quotation, use the 'Create' menu in the toolbar and
+     choose 'Sales Order'. Leave all the pre-filled values as they are.
+     Save, then Submit and confirm 'Yes'.
+  3. From the submitted Sales Order, use 'Create' -> 'Delivery Note' the same
+     way. Leave the fields, Save, then Submit and confirm.
+  4. From the submitted Delivery Note, use 'Create' -> 'Sales Invoice' the same
+     way. Leave the fields, Save, then Submit and confirm.
+
+  Done when all four documents (Quotation, Sales Order, Delivery Note, Sales
+  Invoice) exist and are Submitted for customer "Cust-{slug}".
+
+mode: do
+# start_url is used by partial_grader for the right_page check.
+start_url: "http://erpnext-frontend:8080/app/quotation"
+brain: any
+# 120 actions: navigate (2) + Quotation (20) + SO from Quotation (12) +
+# DN from SO (12) + SI from DN (12) + retries buffer (~62).
+max_actions: 120
+# 2400s: 4 submit round-trips (~30s each) + form load times + buffer.
+timeout_seconds: 2400
+
+fixture:
+  reset: unique_name
+  pre_seed:
+    - doctype: Customer
+      fields:
+        customer_name: "Cust-{slug}"
+        customer_group: "Commercial"
+        customer_type: "Company"
+        territory: "Rest Of The World"
+    - doctype: Item
+      fields:
+        item_code: "Item-{slug}"
+        item_name: "Item-{slug}"
+        item_group: "All Item Groups"
+        stock_uom: "Nos"
+        is_purchase_item: 0
+        is_sales_item: 1
+        is_stock_item: 0
+
+graders:
+  # Step 1: Quotation submitted
+  - kind: db
+    endpoint: "/api/resource/Quotation?filters=[[\"party_name\",\"=\",\"Cust-{slug}\"]]&limit_page_length=1"
+    fetch_first_from_list: true
+    expect_with_weights:
+      party_name: { value: "Cust-{slug}", weight: 1.0 }
+      docstatus:  { value: 1,             weight: 1.0 }
+
+  # Step 2: Sales Order submitted, linked to same customer
+  - kind: db
+    endpoint: "/api/resource/Sales Order?filters=[[\"customer\",\"=\",\"Cust-{slug}\"]]&limit_page_length=1"
+    fetch_first_from_list: true
+    expect_with_weights:
+      customer:  { value: "Cust-{slug}", weight: 1.0 }
+      docstatus: { value: 1,             weight: 1.0 }
+
+  # Step 3: Delivery Note submitted, linked to same customer
+  - kind: db
+    endpoint: "/api/resource/Delivery Note?filters=[[\"customer\",\"=\",\"Cust-{slug}\"]]&limit_page_length=1"
+    fetch_first_from_list: true
+    expect_with_weights:
+      customer:  { value: "Cust-{slug}", weight: 1.0 }
+      docstatus: { value: 1,             weight: 1.0 }
+
+  # Step 4: Sales Invoice submitted, linked to same customer
+  - kind: db
+    endpoint: "/api/resource/Sales Invoice?filters=[[\"customer\",\"=\",\"Cust-{slug}\"]]&limit_page_length=1"
+    fetch_first_from_list: true
+    expect_with_weights:
+      customer:  { value: "Cust-{slug}", weight: 1.0 }
+      docstatus: { value: 1,             weight: 1.0 }

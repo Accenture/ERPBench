@@ -1,0 +1,40 @@
+# T1 — long text (rich-text editor). Customer.customer_details is a Small
+# Text field. ERPNext may wrap it in <div><p>...</p></div>; the matcher's
+# HTML-strip handles the wrapping.
+
+id: t1_change_customer_details
+tier: T1
+task_type: text_edit
+prompt: >-
+  Open the customer named '{customer_name}' and set the 'Customer Details'
+  field to: "Premium widget supplier with global reach since 2019." Save
+  the record.
+mode: do
+start_url: "http://erpnext-frontend:8080/app/customer"
+brain: any
+max_actions: 14
+timeout_seconds: 300
+
+expected_actions:
+  - { type: click_link,    label: "CRM",                  category: safe }
+  - { type: click_link,    label: "Customer",             category: safe }
+  - { type: click_link,    label: "{customer_name}",      category: safe }
+  - { type: click_field,   label: "Customer Details",     category: safe }
+  - { type: type,          text: "Premium widget supplier with global reach since 2019.", category: safe }
+  - { type: click_button,  label: "Save", button_role: save, category: commit }
+
+fixture:
+  reset: unique_name
+  pre_seed:
+    - doctype: Customer
+      fields:
+        customer_name: "{customer_name}"
+        customer_type: Company
+        customer_group: Commercial
+        territory:     All Territories
+
+graders:
+  - kind: db
+    endpoint: /api/resource/Customer/{customer_name}
+    expect:
+      customer_details: "Premium widget supplier with global reach since 2019."

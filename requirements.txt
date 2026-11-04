@@ -1,0 +1,11 @@
+# Host-side dependencies: runner.py and evaluation/ (graders, reset, reports).
+# Install with:
+#   pip install -r requirements.txt
+# Exact versions, including transitive dependencies. The observer container's
+# dependencies are pinned separately in stack/requirements.txt.
+certifi==2026.7.22
+charset-normalizer==3.5.2
+idna==3.20
+PyYAML==6.0.3
+requests==2.34.2
+urllib3==2.8.0

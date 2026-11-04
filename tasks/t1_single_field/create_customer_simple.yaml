@@ -1,0 +1,31 @@
+# T1 — CREATE NEW RECORD (Customer). Plays to UI-TARS grounding strengths:
+# prominent "+ Add Customer" button → fill required fields → Save.
+# No pre-existing record to search for. nav-assist lands on Customer list.
+
+id: t1_create_customer_simple
+tier: T1
+task_type: create
+prompt: >-
+  Create a new customer with the name '{customer_name}' and customer type
+  'Company'. Click Save to commit the record.
+mode: do
+start_url: "http://erpnext-frontend:8080/app/customer"
+brain: any
+max_actions: 25
+timeout_seconds: 300
+
+expected_actions:
+  - { type: click_button, label: "+ Add Customer",  category: safe }
+  - { type: click_field,  label: "Customer Name",   category: safe }
+  - { type: type,         text:  "{customer_name}", category: safe }
+  - { type: click_button, label: "Save", button_role: save, category: commit }
+
+fixture:
+  reset: unique_name
+
+graders:
+  - kind: db
+    endpoint: /api/resource/Customer/{customer_name}
+    expect:
+      customer_name: "{customer_name}"
+      customer_type: "Company"

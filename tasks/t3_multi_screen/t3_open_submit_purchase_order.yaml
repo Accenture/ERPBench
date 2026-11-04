@@ -1,0 +1,116 @@
+# T3 — Track B: submitted document (docstatus=1), OSWorld-analog variant.
+#
+# Same grading infrastructure as T1/T2 (multi_field_create + db grader with
+# expect_with_weights). Track B novelty is the Submit step: agent must click
+# 'Submit' in the form toolbar and confirm the dialog to reach docstatus=1.
+# Partial credit: 0.5 if PO created but not submitted, 1.0 if submitted.
+#
+# OSWorld-analog (skip_nav_assist): runner resets to about:blank; agent must
+# navigate to ERPNext themselves. No nav-assist floor credit for right_page.
+#
+# Pre-seed: Supplier "Supp-{slug}" and Item "Item-{slug}" created via API.
+# Agent does NOT need to create those master records.
+
+id: t3_open_submit_purchase_order
+tier: T3
+task_type: multi_field_create
+skip_nav_assist: true
+prompt: |-
+  Your browser is on a blank page (about:blank). ERPNext is hosted at
+  http://erpnext-frontend:8080. The unique run identifier is: {slug}
+
+  Two master records already exist for you:
+    - Supplier: Supp-{slug}
+    - Item Code: Item-{slug}
+
+  Complete the following steps:
+
+  0. Open ERPNext:
+     Navigate to: http://erpnext-frontend:8080/app/purchase-order
+     (Use navigate_url — do NOT try to click the browser address bar.)
+     If a login page appears, sign in as Administrator / admin.
+     You should land on the Purchase Order list.
+
+  1. Create a new Purchase Order:
+     - Click '+ Add Purchase Order' or '+ New' to open a blank draft form.
+     - If an unwanted dropdown or pop-up appears after any click, press Escape
+       to dismiss it before continuing.
+     - Set the Supplier field: Supp-{slug}
+       (type "Supp-{slug}" into the Supplier link field, then press Tab to
+       confirm the first autocomplete suggestion — do NOT click the dropdown
+       item at a raw coordinate.)
+     - The Company and Currency fields auto-populate from the system default;
+       leave them unchanged.
+     - In the 'Items' table, add one item row and fill it:
+         Item Code: Item-{slug}   (type it, then Tab to confirm)
+         Qty: 1
+         Rate: 500
+       Ensure exactly one item row is filled and no empty item rows remain —
+       an empty item row blocks saving.
+     - Save the form with Ctrl+S and wait for the save to complete.
+
+  2. Submit the Purchase Order:
+     - After saving, a 'Submit' button appears in the form toolbar (near the
+       top of the page, alongside Save / Delete). It may also be inside the
+       Actions (⋮) menu — look there if you do not see a standalone button.
+     - Click 'Submit'.
+     - A confirmation dialog will appear: click 'Yes' (or 'Confirm') to
+       proceed.
+     - Wait for the form to reload. The status indicator should change to
+       'Submitted' and the Submit button should disappear.
+
+  Stop after submitting. Do NOT create any further documents.
+
+human_prompt: |-
+  Create and submit one Purchase Order. A Supplier "Supp-{slug}" and an Item
+  "Item-{slug}" already exist for you.
+
+  1. On the Purchase Order list, click '+ Add Purchase Order' (or '+ New').
+     - Set Supplier to "Supp-{slug}" (type it, then press Tab to confirm). If
+       an unwanted dropdown or pop-up appears, press Escape.
+     - Company and Currency auto-populate from the default; leave them.
+     - In the Items table, add one item row: Item "Item-{slug}", Qty 1,
+       Rate 500. Ensure exactly one item row is filled and no empty item rows
+       remain (an empty row blocks saving).
+     - Save (Ctrl+S).
+  2. Then click 'Submit' (in the toolbar, or under the Actions menu if there is
+     no standalone button) and confirm 'Yes'. Wait until the status shows
+     'Submitted'.
+
+  Done when the Purchase Order for supplier "Supp-{slug}" exists and is
+  Submitted.
+
+mode: do
+# start_url is used by partial_grader to derive the target doctype for
+# the right_page check. The runner sets about:blank when skip_nav_assist=true.
+start_url: "http://erpnext-frontend:8080/app/purchase-order"
+brain: any
+# 80 actions: address-bar nav (3-6) + login if needed (5-8) + PO form
+# (supplier + item row + save + submit + confirm dialog = ~20-30) + buffer.
+max_actions: 80
+# 1500s: similar to the project-chain base task; submit dialog adds ~30s.
+timeout_seconds: 1500
+
+fixture:
+  reset: unique_name
+  pre_seed:
+    - doctype: Supplier
+      fields:
+        supplier_name: "Supp-{slug}"
+        supplier_group: "All Supplier Groups"
+    - doctype: Item
+      fields:
+        item_code: "Item-{slug}"
+        item_name: "Item-{slug}"
+        item_group: "All Item Groups"
+        stock_uom: "Nos"
+        is_purchase_item: 1
+        is_stock_item: 0
+
+graders:
+  - kind: db
+    endpoint: "/api/resource/Purchase Order?filters=[[\"supplier\",\"=\",\"Supp-{slug}\"]]&limit_page_length=1"
+    fetch_first_from_list: true
+    expect_with_weights:
+      supplier:  { value: "Supp-{slug}", weight: 1.0 }
+      docstatus: { value: 1,             weight: 1.0 }

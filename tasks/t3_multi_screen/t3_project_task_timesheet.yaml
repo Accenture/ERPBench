@@ -1,0 +1,107 @@
+# T3 — Project Management chain. Three linked docs, none submittable,
+# no Company/Fiscal Year prereq. Chosen as the T3 smoke gate because
+# every step is Company-agnostic and works on a fresh ERPNext v15
+# install with zero bootstrap.
+#
+# Chain: Project → Task → Timesheet.
+# Grading: three grader entries, one per doc in the chain.
+#
+# NOTE ON AUTO-NAMING (why every grader uses fetch_first_from_list):
+# Project.name, Task.name, and Timesheet.name are all Frappe-generated
+# (PROJ-XXXX, TASK-YYYY-NNNNN, TS-YYYY-NNNNN). The values we set in the
+# form (project_name, subject, time_log.description) live in different
+# fields than the auto-generated name. We therefore locate each doc
+# via a unique field value that IS user-controlled.
+# See v1.1 backlog: name-binding across graders would let us skip the
+# time_log.description marker.
+
+id: t3_project_task_timesheet
+tier: T3
+task_type: chained_workflow
+prompt: |-
+  Create a three-step project management chain in ERPNext. The unique
+  run identifier for this task is: {slug}
+
+  1. Navigate to the Project list. Click 'Add Project' (or '+ New')
+     to open a blank Project form. Set:
+     - Project Name: Proj-{slug}
+     - Status: Open
+     Save the Project.
+
+  2. Open the Project 'Proj-{slug}' you just created. In the Tasks
+     section (a tab or side panel on the Project form), click 'Add Row'
+     or 'Create Task' to add a new Task with:
+     - Subject: Task-{slug}
+     - Status: Open
+     Save the Task.
+
+  3. From the Task 'Task-{slug}', use the 'Create > Timesheet' menu
+     (or navigate to /app/timesheet/new). Fill in ONE time-log row:
+     - Activity Type: Communication
+     - Task: Task-{slug} (should auto-populate if creating from the Task)
+     - From Time: any workday timestamp
+     - Hours: 2
+     - Description: Time log for {slug}   <-- IMPORTANT: exact text
+     Save the Timesheet (do NOT submit).
+human_prompt: |-
+  Create three linked records: a Project, a Task inside it, and a Timesheet
+  logged against that Task. Type the names exactly as written.
+
+  1. On the Project list, click 'Add Project' (or '+ New'). Set Project Name
+     to exactly "Proj-{slug}" and Status to "Open". Save.
+  2. Open the Project you just created. In its Tasks section (a tab or side
+     panel on the form), click 'Add Row' (or 'Create Task') and add a Task with
+     Subject exactly "Task-{slug}" and Status "Open". Save.
+  3. From that Task, use the 'Create > Timesheet' menu (or open a new
+     Timesheet). Add one time-log row: Activity Type "Communication",
+     From Time any workday time, Hours 2, and Description exactly
+     "Time log for {slug}". Save the Timesheet (do NOT submit).
+
+  Done when the Project, Task, and Timesheet all exist with those exact values.
+mode: do
+start_url: "http://erpnext-frontend:8080/app/project"
+brain: any
+max_actions: 80
+timeout_seconds: 1500
+
+fixture:
+  reset: unique_name
+  pre_seed: []
+
+# Three grader entries, one per doc in the chain. Each uses
+# fetch_first_from_list because Project / Task / Timesheet all have
+# auto-generated .name values that we can't predict at author time.
+graders:
+  # Project: filter by user-controlled project_name (form field), not the
+  # Frappe-generated name (PROJ-XXXX). The `expect` block still targets
+  # user-visible values.
+  - kind: db
+    endpoint: "/api/resource/Project?filters=[[\"project_name\",\"=\",\"Proj-{slug}\"]]&limit_page_length=1"
+    fetch_first_from_list: true
+    expect:
+      project_name: "Proj-{slug}"
+      status: Open
+
+  # Task: filter by subject. Cannot filter by `project` because Task.project
+  # stores Project.name (PROJ-XXXX), which we don't know at grader-substitution
+  # time. Subject with the {slug} suffix is unique enough for our purposes.
+  - kind: db
+    endpoint: "/api/resource/Task?filters=[[\"subject\",\"=\",\"Task-{slug}\"]]&limit_page_length=1"
+    fetch_first_from_list: true
+    expect:
+      subject: "Task-{slug}"
+      status: Open
+
+  # Timesheet: filter by child-table description field ("Timesheet Detail"
+  # is the child DocType name). The prompt asks the model to enter a specific
+  # description string in the time_log row so we can locate the Timesheet
+  # without knowing its auto-generated name. Frappe's list filter supports
+  # child-doctype dot notation for this pattern.
+  # parent_project on Timesheet is NOT auto-populated from child rows in
+  # v15, so filtering on it would always return empty — hence the marker.
+  - kind: db
+    endpoint: "/api/resource/Timesheet?filters=[[\"Timesheet Detail\",\"description\",\"=\",\"Time log for {slug}\"]]&limit_page_length=1"
+    fetch_first_from_list: true
+    expect_with_weights:
+      total_hours: { value: 2.0,   weight: 1.0 }
+      status:      { value: Draft, weight: 1.0 }

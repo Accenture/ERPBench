@@ -1,0 +1,71 @@
+# T3 — Support chain. Customer → Issue → Communication (comment) → Issue
+# status transition. Non-submittable, no Company/Fiscal Year prereq.
+#
+# Grading:
+#   1. Issue was created with the correct subject + priority AND its
+#      status advanced to 'Replied'.
+#   2. A Comment Communication exists, linked to the Issue, containing
+#      the unique {slug} marker in its content.
+#
+# NOTE: Uses 'Add Comment' (not email Reply) because this ERPNext stack
+# has no outbound email configured. Comments create Communication records
+# reliably without SMTP.
+
+id: t3_customer_issue_reply
+tier: T3
+task_type: chained_workflow
+prompt: |-
+  A Customer named '{customer_name}' has been seeded. Handle a support
+  case for that customer through the following steps:
+
+  1. Open the Customer '{customer_name}' from the Customer list.
+
+  2. From the Customer's page (side panel or dashboard), create a new
+     Issue for this Customer. On the Issue form set:
+     - Subject: 'Login broken - {slug}'
+     - Priority: High
+     - Status: Open
+     - Customer: {customer_name}  (should auto-populate)
+     Save the Issue.
+
+  3. Open the Issue you just saved. In the timeline / activity section
+     at the bottom of the form, click 'Add Comment' (NOT 'New Email'
+     or 'Reply'). In the comment text box type exactly:
+     "Investigating, will update by EOD. Ref-{slug}"
+     Then click the 'Add Comment' button to save it.
+
+  4. On the same Issue form, change the Status field from 'Open' to
+     'Replied'. Save the Issue.
+mode: do
+start_url: "http://erpnext-frontend:8080/app/customer"
+brain: any
+max_actions: 80
+timeout_seconds: 1500
+
+fixture:
+  reset: unique_name
+  pre_seed:
+    - doctype: Customer
+      fields:
+        customer_name: "{customer_name}"
+        customer_type: Company
+        customer_group: Commercial
+        territory: All Territories
+
+graders:
+  # A Comment record exists linked to the Issue with the slug marker.
+  # ERPNext stores "Add Comment" actions in the Comment doctype (not Communication).
+  - kind: db
+    endpoint: "/api/resource/Comment?filters=[[\"reference_doctype\",\"=\",\"Issue\"],[\"comment_type\",\"=\",\"Comment\"],[\"content\",\"like\",\"%Ref-{slug}%\"]]&limit_page_length=1"
+    fetch_first_from_list: true
+    expect:
+      comment_type: Comment
+
+  # Issue was created linked to the seeded Customer with the exact
+  # subject, and its status ended at 'Replied'.
+  - kind: db
+    endpoint: "/api/resource/Issue?filters=[[\"customer\",\"=\",\"{customer_name}\"],[\"subject\",\"=\",\"Login broken - {slug}\"]]&limit_page_length=1"
+    fetch_first_from_list: true
+    expect:
+      priority: High
+      status: Replied
