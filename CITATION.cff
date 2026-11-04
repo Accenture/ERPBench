@@ -1,0 +1,37 @@
+cff-version: 1.2.0
+message: "If you use ERPBench, please cite the paper below."
+title: "ERPBench"
+type: software
+license: Apache-2.0
+repository-code: "https://github.com/Accenture/ERPBench"
+authors:
+  - family-names: Bhagtani
+    given-names: Kratika
+  - family-names: Sridhar
+    given-names: Kusha
+  - family-names: Pouyan
+    given-names: Maziyar Baran
+  - family-names: Zhao
+    given-names: Yuying
+  - family-names: Siow
+    given-names: Eugene
+preferred-citation:
+  type: article
+  title: "ERPBench: A State-Grounded Evaluation Paradigm for Computer-Use Agents in Enterprise Software"
+  authors:
+    - family-names: Bhagtani
+      given-names: Kratika
+    - family-names: Sridhar
+      given-names: Kusha
+    - family-names: Pouyan
+      given-names: Maziyar Baran
+    - family-names: Zhao
+      given-names: Yuying
+    - family-names: Siow
+      given-names: Eugene
+  year: 2026
+  journal: "arXiv preprint"
+  identifiers:
+    - type: other
+      value: "arXiv:2609.17885"
+  url: "https://arxiv.org/abs/2609.17885"

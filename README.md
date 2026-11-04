@@ -6,7 +6,7 @@ and keyboard actions. Grading reads the resulting records back from the ERPNext
 database, so a run only counts as a success if the data is actually correct.
 
 Paper: *ERPBench: A State-Grounded Evaluation Paradigm for Computer-Use Agents in Enterprise Software*,
-arXiv:2609.17885.
+[arXiv:2609.17885](https://arxiv.org/abs/2609.17885).
 
 ## Layout
 
@@ -115,6 +115,19 @@ python runner.py --brain human --run-id RUN-human-<name> --suite t1,t2,t3 --runs
 
 Clicks and typing in the browser are captured into the same log format the
 agents produce, so the same graders apply.
+
+## Citation
+
+If you use ERPBench, please cite:
+
+```bibtex
+@article{bhagtani2026erpbench,
+  title   = {ERPBench: A State-Grounded Evaluation Paradigm for Computer-Use Agents in Enterprise Software},
+  author  = {Bhagtani, Kratika and Sridhar, Kusha and Pouyan, Maziyar Baran and Zhao, Yuying and Siow, Eugene},
+  journal = {arXiv preprint arXiv:2609.17885},
+  year    = {2026}
+}
+```
 
 ## License
 
